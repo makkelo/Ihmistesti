@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<title>Ihmistesti</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #f2f2f2;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    #container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        text-align: center;
+        width: 380px;
+    }
+
+    #checkboxArea {
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+    }
+
+    #check {
+        width: 25px;
+        height: 25px;
+        cursor: pointer;
+    }
+
+    #result {
+        margin-top: 25px;
+        font-size: 18px;
+        font-weight: bold;
+        display: none;
+    }
+
+    #retry {
+        margin-top: 20px;
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        display: none;
+    }
+</style>
+</head>
+<body>
+
+<div id="container">
+    <h2 id="title">Vahvista, että olet ihminen.</h2>
+
+    <div id="checkboxArea">
+        <input type="checkbox" id="check">
+        <label for="check">Olen ihminen</label>
+    </div>
+
+    <div id="result"></div>
+    <button id="retry">Kokeile uudestaan</button>
+</div>
+
+<script>
+let startTime;
+let mouseMoves;
+let checkbox = document.getElementById("check");
+let resultBox = document.getElementById("result");
+let retryBtn = document.getElementById("retry");
+let title = document.getElementById("title");
+let checkboxArea = document.getElementById("checkboxArea");
+
+// Alustaa testin
+function resetTest() {
+    checkbox.checked = false;
+    resultBox.style.display = "none";
+    retryBtn.style.display = "none";
+    resultBox.innerHTML = "";
+
+    title.style.display = "block";
+    checkboxArea.style.display = "flex";
+
+    startTime = Date.now();
+    mouseMoves = [];
+}
+
+resetTest();
+
+// Seuraa hiiren liikkeitä
+document.addEventListener("mousemove", (e) => {
+    mouseMoves.push({ x: e.clientX, y: e.clientY, t: Date.now() });
+});
+
+// Kulmikkuuden arviointi
+function calculateAngularVariance(moves) {
+    if (moves.length < 3) return 0.5;
+
+    let angles = [];
+
+    for (let i = 2; i < moves.length; i++) {
+        let dx1 = moves[i-1].x - moves[i-2].x;
+        let dy1 = moves[i-1].y - moves[i-2].y;
+        let dx2 = moves[i].x - moves[i-1].x;
+        let dy2 = moves[i].y - moves[i-1].y;
+
+        let angle1 = Math.atan2(dy1, dx1);
+        let angle2 = Math.atan2(dy2, dx2);
+
+        let diff = Math.abs(angle2 - angle1);
+        if (diff > Math.PI) diff = 2 * Math.PI - diff;
+
+        angles.push(diff);
+    }
+
+    let avg = angles.reduce((a,b)=>a+b,0) / angles.length;
+
+    // 0 = täysin suora, 1 = hyvin mutkitteleva
+    return Math.min(avg / Math.PI, 1);
+}
+
+// Suoraviivaisuuden arviointi
+function calculateStraightness(moves) {
+    if (moves.length < 3) return 0.5;
+
+    let start = moves[0];
+    let end = moves[moves.length - 1];
+
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let directDistance = Math.sqrt(dx*dx + dy*dy);
+
+    let pathDistance = 0;
+    for (let i = 1; i < moves.length; i++) {
+        let dx2 = moves[i].x - moves[i-1].x;
+        let dy2 = moves[i].y - moves[i-1].y;
+        pathDistance += Math.sqrt(dx2*dx2 + dy2*dy2);
+    }
+
+    return Math.min(directDistance / pathDistance, 1);
+}
+
+// Nopeuden ihmismäisyys
+function speedHumanScore(t) {
+    if (t <= 350) return 0;          // erittäin nopea → robotti
+    if (t >= 1800) return 1;         // yli 1,8 s → ihminen
+    return (t - 350) / 1450;         // väli 0,35–1,8 s
+}
+
+// Kun käyttäjä klikkaa ruutua
+checkbox.addEventListener("change", () => {
+
+    // Piilota alkuperäinen teksti ja ruutu
+    title.style.display = "none";
+    checkboxArea.style.display = "none";
+
+    let clickTime = Date.now() - startTime;
+
+    // 1. Nopeus
+    let speedScore = speedHumanScore(clickTime);
+
+    // 2. Suoraviivaisuus (suora = robotti)
+    let straightnessScore = calculateStraightness(mouseMoves);
+
+    // 3. Kulmikkuus (kulmikas = robotti)
+    let angularScore = calculateAngularVariance(mouseMoves);
+
+    // 4. Klikkauksen sijainti
+    let rect = checkbox.getBoundingClientRect();
+    let centerX = rect.left + rect.width / 2;
+    let centerY = rect.top + rect.height / 2;
+
+    let lastMove = mouseMoves[mouseMoves.length - 1] || { x: centerX, y: centerY };
+    let dx = Math.abs(lastMove.x - centerX);
+    let dy = Math.abs(lastMove.y - centerY);
+    let distanceFromCenter = Math.sqrt(dx*dx + dy*dy);
+
+    let centerPenalty = Math.max(0, 1 - distanceFromCenter / 35);
+
+    // Lopullinen arvio — robotiksi tekeytyminen vaikeampaa
+    let humanProbability =
+        speedScore * 0.30 +                 // hitaampi = ihmismäisempi
+        (1 - straightnessScore) * 0.40 +    // vähemmän suora = ihmismäisempi
+        (1 - angularScore) * 0.20 +         // vähemmän kulmia = ihmismäisempi
+        (1 - centerPenalty) * 0.10;         // ei keskelle = ihmismäisempi
+
+    humanProbability = Math.round(humanProbability * 100);
+
+    // Tulostus + emoji
+    if (humanProbability > 50) {
+        resultBox.innerHTML =
+            "<p>Olet todennäköisesti ihminen. 👤</p><p>Arvioin sinut ihmiseksi "
+            + humanProbability + " % todennäköisyydellä.</p>";
+    } else {
+        resultBox.innerHTML =
+            "<p>Olet todennäköisesti robotti. 🤖</p><p>Arvioin sinut ihmiseksi "
+            + humanProbability + " % todennäköisyydellä.</p>";
+    }
+
+    resultBox.style.display = "block";
+    retryBtn.style.display = "inline-block";
+});
+
+// Uudelleenyritys
+retryBtn.addEventListener("click", () => {
+    resetTest();
+});
+</script>
+
+</body>
+</html>
